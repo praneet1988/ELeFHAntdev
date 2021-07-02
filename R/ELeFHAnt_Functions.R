@@ -518,7 +518,7 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
 		rf_celltype_pred <- data.frame(colnames(rf_cm)[apply(rf_cm,1,which.max)], rownames(rf_cm), check.names=F)
 		colnames(rf_celltype_pred) <- c("HarmonizedLabels_UsingRF", "seurat_clusters")
  		HarmonizedLabels_UsingRF <- as.character(rf_celltype_pred[match(integrated.atlas$seurat_clusters, rf_celltype_pred$seurat_clusters), "HarmonizedLabels_UsingRF"])
- 		query[["HarmonizedLabels_UsingRF"]] <- HarmonizedLabels_UsingRF
+ 		integrated.atlas[["HarmonizedLabels_UsingRF"]] <- HarmonizedLabels_UsingRF
  		message ("Added Harmonized Labels using randomForest to integrated object")
  		write.table(rf_cm, "ConfusionMatrix_RandomForest.txt", quote=F, sep="\t")
  		if(validatePredictions == TRUE)
@@ -655,7 +655,7 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
 		rf_celltype_pred <- data.frame(colnames(rf_cm)[apply(rf_cm,1,which.max)], rownames(rf_cm), check.names=F)
 		colnames(rf_celltype_pred) <- c("HarmonizedLabels_UsingRF", "seurat_clusters")
  		HarmonizedLabels_UsingRF <- as.character(rf_celltype_pred[match(integrated.atlas$seurat_clusters, rf_celltype_pred$seurat_clusters), "HarmonizedLabels_UsingRF"])
- 		query[["HarmonizedLabels_UsingRF"]] <- HarmonizedLabels_UsingRF
+ 		integrated.atlas[["HarmonizedLabels_UsingRF"]] <- HarmonizedLabels_UsingRF
  		message ("Added Harmonized Labels using randomForest to integrated object")
  		write.table(rf_cm, "ConfusionMatrix_RandomForest.txt", quote=F, sep="\t")
  		
