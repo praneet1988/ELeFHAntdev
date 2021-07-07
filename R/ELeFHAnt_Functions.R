@@ -274,7 +274,7 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
  		{
  			message("Ensembl celltype annotation completed. Starting validation of celltype assignments using GSEA")
  			reference.validation.use <- subset(reference_use, idents = consensus_celltype_pred$PredictedCelltype_UsingEnsemble)
- 			validation = ValidatePredictions(reference = reference.validation.use, query = query_use, celltype_assignments = consensus_celltype_pred)
+ 			validation = ValidatePredictions(reference = reference.validation.use, query = query_use)
  			message ("Validation completed. Please see summary of GSEA below")
  			print (validation)
  			write.table(validation, "Summary_GeneSetEnrichmentAnalysis.txt", quote=F, sep="\t")
