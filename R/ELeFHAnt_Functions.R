@@ -79,7 +79,7 @@ ValidatePredictions <- function(reference = NULL, query = NULL) {
 #' @param validatePredictions logical indicator (TRUE or FALSE) to asses predictions by computing number of markers shared between assigned celltype and annotated cluster
 #' @return query seurat object with predictions added to meta.data of the object
 #' @export
-CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALSE, downsample_to = 100, classification.method = c("randomForest", "SVM", "Ensemble"), crossvalidationSVM = 5, validatePredictions = TRUE) {
+CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALSE, downsample_to = 100, classification.method = c("randomForest", "SVM", "Ensemble"), crossvalidationSVM = 10, validatePredictions = TRUE) {
 	if(downsample == TRUE)
 	{
 		message ("Setting Assay of reference and query to RNA")
@@ -130,47 +130,21 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
 
 	if(classification.method == "randomForest")
 	{
-		message ("Setting up randomForest classifier learning. ELeFHAnt will set up 4 randomForest classifiers based on hyperparameter (ntree)")
-		message ("Training randomForest classifier 1")
-		rf_Celltypes.1 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 500)
-		message ("Training randomForest classifier 2")
-		rf_Celltypes.2 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 1000)
-		message ("Training randomForest classifier 3")
-		rf_Celltypes.3 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 1500)
-		message ("Training randomForest classifier 4")
-		rf_Celltypes.4 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 2000)
-
-		message ("Predicting using trained randomForest classifier 1")
+		message ("Setting up randomForest classifier learning")
+		message ("Training randomForest classifier")
+		rf_Celltypes.1 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 1000)
+		message ("Predicting using trained randomForest classifier")
 		rf_pred.1 = predict(rf_Celltypes.1, newdata=X$query[,1:2000])
 		rf_cm.1 = table(X$query$Clusters, rf_pred.1)
-		message ("Predicting using trained randomForest classifier 2")
-		rf_pred.2 = predict(rf_Celltypes.2, newdata=X$query[,1:2000])
-		rf_cm.2 = table(X$query$Clusters, rf_pred.2)
-		message ("Predicting using trained randomForest classifier 3")
-		rf_pred.3 = predict(rf_Celltypes.3, newdata=X$query[,1:2000])
-		rf_cm.3 = table(X$query$Clusters, rf_pred.3)
-		message ("Predicting using trained randomForest classifier 4")
-		rf_pred.4 = predict(rf_Celltypes.4, newdata=X$query[,1:2000])
-		rf_cm.4 = table(X$query$Clusters, rf_pred.4)
 
 		message ("Calculating weights for each randomForest classifier")
 		rf_acccuracy_estimate.1 <- (1-tail(rf_Celltypes.1$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 1:", rf_acccuracy_estimate.1))
-		rf_acccuracy_estimate.2 <- (1-tail(rf_Celltypes.2$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 2:", rf_acccuracy_estimate.2))
-		rf_acccuracy_estimate.3 <- (1-tail(rf_Celltypes.3$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 3:", rf_acccuracy_estimate.3))
-		rf_acccuracy_estimate.4 <- (1-tail(rf_Celltypes.4$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 4:", rf_acccuracy_estimate.4))
+		message (paste0("Accuray estimate of randomForest classifier:", rf_acccuracy_estimate.1))
 
 		message ("Assigning weights to randomForest predictions")
 		rf_cm.1 <- as.matrix(rf_cm.1) * rf_acccuracy_estimate.1
-		rf_cm.2 <- as.matrix(rf_cm.2) * rf_acccuracy_estimate.2
-		rf_cm.3 <- as.matrix(rf_cm.3) * rf_acccuracy_estimate.3
-		rf_cm.4 <- as.matrix(rf_cm.4) * rf_acccuracy_estimate.4
 
-		message ("Combining weighted predictions from each randomForest classifier ")
-		rf_cm <- rf_cm.1 + rf_cm.2 + rf_cm.3 + rf_cm.4
+		rf_cm <- rf_cm.1
 
 		rf_celltype_pred <- data.frame(colnames(rf_cm)[apply(rf_cm,1,which.max)], rownames(rf_cm), check.names=F)
 		colnames(rf_celltype_pred) <- c("PredictedCelltype_UsingRF", "seurat_clusters")
@@ -197,47 +171,22 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
 
  	if(classification.method == "SVM")
  	{
- 		message ("Setting up SVM classifier learning. ELeFHAnt will set up 4 SVM classifiers based on hyperparameter (cost)")
- 		message ("Training SVM classifier 1")
- 		svm_Celltypes.1 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10)
- 		message ("Training SVM classifier 2")
- 		svm_Celltypes.2 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 100)
- 		message ("Training SVM classifier 3")
- 		svm_Celltypes.3 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 500)
- 		message ("Training SVM classifier 4")
- 		svm_Celltypes.4 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 1000)
-
- 		message ("Predicting using trained SVM classifier 1")
+ 		message ("Setting up SVM classifier learning")
+ 		message ("Training SVM classifier")
+ 		svm_Celltypes.1 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10, kernel = "linear")
+ 		
+ 		message ("Predicting using trained SVM classifier")
 		svm_pred.1 = predict(svm_Celltypes.1, newdata=X$query[,1:2000])
 		svm_cm.1 = table(X$query$Clusters, svm_pred.1)
-		message ("Predicting using trained SVM classifier 2")
-		svm_pred.2 = predict(svm_Celltypes.2, newdata=X$query[,1:2000])
-		svm_cm.2 = table(X$query$Clusters, svm_pred.2)
-		message ("Predicting using trained SVM classifier 3")
-		svm_pred.3 = predict(svm_Celltypes.3, newdata=X$query[,1:2000])
-		svm_cm.3 = table(X$query$Clusters, svm_pred.3)
-		message ("Predicting using trained SVM classifier 4")
-		svm_pred.4 = predict(svm_Celltypes.4, newdata=X$query[,1:2000])
-		svm_cm.4 = table(X$query$Clusters, svm_pred.4)
 
 		message ("Calculating weights for each SVM classifier")
 		svm_accuracy_estimate.1 <- svm_Celltypes.1$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 1:", svm_accuracy_estimate.1))
-		svm_accuracy_estimate.2 <- svm_Celltypes.2$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 2:", svm_accuracy_estimate.2))
-		svm_accuracy_estimate.3 <- svm_Celltypes.3$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 3:", svm_accuracy_estimate.3))
-		svm_accuracy_estimate.4 <- svm_Celltypes.4$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 4:", svm_accuracy_estimate.4))
+		message (paste0("Accuray estimate of SVM classifier:", svm_accuracy_estimate.1))
 
 		message ("Assigning weights to SVM predictions")
 		svm_cm.1 <- as.matrix(svm_cm.1) * svm_accuracy_estimate.1
-		svm_cm.2 <- as.matrix(svm_cm.2) * svm_accuracy_estimate.2
-		svm_cm.3 <- as.matrix(svm_cm.3) * svm_accuracy_estimate.3
-		svm_cm.4 <- as.matrix(svm_cm.4) * svm_accuracy_estimate.4
 
-		message ("Combining weighted predictions from each SVM classifier ")
-		svm_cm = svm_cm.1 + svm_cm.2 + svm_cm.3 + svm_cm.4
+		svm_cm = svm_cm.1
 
 		svm_celltype_pred <- data.frame(colnames(svm_cm)[apply(svm_cm,1,which.max)], rownames(svm_cm), check.names=F)
 		colnames(svm_celltype_pred) <- c("PredictedCelltype_UsingSVM", "seurat_clusters")
@@ -265,47 +214,21 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
  	if(classification.method == "Ensemble")
  	{
  		message ("Ensemble learning using classification accuracy of both Random Forest and SVM classifiers")
-		message ("Setting up randomForest classifier learning. ELeFHAnt will set up 4 randomForest classifiers based on hyperparameter (ntree)")
-		message ("Training randomForest classifier 1")
-		rf_Celltypes.1 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 500)
-		message ("Training randomForest classifier 2")
-		rf_Celltypes.2 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 1000)
-		message ("Training randomForest classifier 3")
-		rf_Celltypes.3 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 1500)
-		message ("Training randomForest classifier 4")
-		rf_Celltypes.4 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 2000)
-
-		message ("Predicting using trained randomForest classifier 1")
+		message ("Setting up randomForest classifier learning")
+		message ("Training randomForest classifier")
+		rf_Celltypes.1 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, ntree = 1000)
+		message ("Predicting using trained randomForest classifier")
 		rf_pred.1 = predict(rf_Celltypes.1, newdata=X$query[,1:2000])
 		rf_cm.1 = table(X$query$Clusters, rf_pred.1)
-		message ("Predicting using trained randomForest classifier 2")
-		rf_pred.2 = predict(rf_Celltypes.2, newdata=X$query[,1:2000])
-		rf_cm.2 = table(X$query$Clusters, rf_pred.2)
-		message ("Predicting using trained randomForest classifier 3")
-		rf_pred.3 = predict(rf_Celltypes.3, newdata=X$query[,1:2000])
-		rf_cm.3 = table(X$query$Clusters, rf_pred.3)
-		message ("Predicting using trained randomForest classifier 4")
-		rf_pred.4 = predict(rf_Celltypes.4, newdata=X$query[,1:2000])
-		rf_cm.4 = table(X$query$Clusters, rf_pred.4)
 
 		message ("Calculating weights for each randomForest classifier")
 		rf_acccuracy_estimate.1 <- (1-tail(rf_Celltypes.1$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 1:", rf_acccuracy_estimate.1))
-		rf_acccuracy_estimate.2 <- (1-tail(rf_Celltypes.2$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 2:", rf_acccuracy_estimate.2))
-		rf_acccuracy_estimate.3 <- (1-tail(rf_Celltypes.3$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 3:", rf_acccuracy_estimate.3))
-		rf_acccuracy_estimate.4 <- (1-tail(rf_Celltypes.4$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 4:", rf_acccuracy_estimate.4))
+		message (paste0("Accuray estimate of randomForest classifier:", rf_acccuracy_estimate.1))
 
 		message ("Assigning weights to randomForest predictions")
 		rf_cm.1 <- as.matrix(rf_cm.1) * rf_acccuracy_estimate.1
-		rf_cm.2 <- as.matrix(rf_cm.2) * rf_acccuracy_estimate.2
-		rf_cm.3 <- as.matrix(rf_cm.3) * rf_acccuracy_estimate.3
-		rf_cm.4 <- as.matrix(rf_cm.4) * rf_acccuracy_estimate.4
 
-		message ("Combining weighted predictions from each randomForest classifier ")
-		rf_cm <- rf_cm.1 + rf_cm.2 + rf_cm.3 + rf_cm.4
+		rf_cm <- rf_cm.1
 
 		rf_celltype_pred <- data.frame(colnames(rf_cm)[apply(rf_cm,1,which.max)], rownames(rf_cm), check.names=F)
 		colnames(rf_celltype_pred) <- c("PredictedCelltype_UsingRF", "seurat_clusters")
@@ -314,47 +237,22 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
  		message ("Added Predicted celltypes using randomForest to query")
  		write.table(rf_cm, "ConfusionMatrix_RandomForest.txt", quote=F, sep="\t")
  		
- 		message ("Setting up SVM classifier learning. ELeFHAnt will set up 4 SVM classifiers based on hyperparameter (cost)")
- 		message ("Training SVM classifier 1")
- 		svm_Celltypes.1 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10)
- 		message ("Training SVM classifier 2")
- 		svm_Celltypes.2 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 100)
- 		message ("Training SVM classifier 3")
- 		svm_Celltypes.3 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 500)
- 		message ("Training SVM classifier 4")
- 		svm_Celltypes.4 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 1000)
-
- 		message ("Predicting using trained SVM classifier 1")
+ 		message ("Setting up SVM classifier learning")
+ 		message ("Training SVM classifier")
+ 		svm_Celltypes.1 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Clusters, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10, kernel = "linear")
+ 		
+ 		message ("Predicting using trained SVM classifier")
 		svm_pred.1 = predict(svm_Celltypes.1, newdata=X$query[,1:2000])
 		svm_cm.1 = table(X$query$Clusters, svm_pred.1)
-		message ("Predicting using trained SVM classifier 2")
-		svm_pred.2 = predict(svm_Celltypes.2, newdata=X$query[,1:2000])
-		svm_cm.2 = table(X$query$Clusters, svm_pred.2)
-		message ("Predicting using trained SVM classifier 3")
-		svm_pred.3 = predict(svm_Celltypes.3, newdata=X$query[,1:2000])
-		svm_cm.3 = table(X$query$Clusters, svm_pred.3)
-		message ("Predicting using trained SVM classifier 4")
-		svm_pred.4 = predict(svm_Celltypes.4, newdata=X$query[,1:2000])
-		svm_cm.4 = table(X$query$Clusters, svm_pred.4)
 
 		message ("Calculating weights for each SVM classifier")
 		svm_accuracy_estimate.1 <- svm_Celltypes.1$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 1:", svm_accuracy_estimate.1))
-		svm_accuracy_estimate.2 <- svm_Celltypes.2$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 2:", svm_accuracy_estimate.2))
-		svm_accuracy_estimate.3 <- svm_Celltypes.3$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 3:", svm_accuracy_estimate.3))
-		svm_accuracy_estimate.4 <- svm_Celltypes.4$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 4:", svm_accuracy_estimate.4))
+		message (paste0("Accuray estimate of SVM classifier:", svm_accuracy_estimate.1))
 
 		message ("Assigning weights to SVM predictions")
 		svm_cm.1 <- as.matrix(svm_cm.1) * svm_accuracy_estimate.1
-		svm_cm.2 <- as.matrix(svm_cm.2) * svm_accuracy_estimate.2
-		svm_cm.3 <- as.matrix(svm_cm.3) * svm_accuracy_estimate.3
-		svm_cm.4 <- as.matrix(svm_cm.4) * svm_accuracy_estimate.4
 
-		message ("Combining weighted predictions from each SVM classifier ")
-		svm_cm = svm_cm.1 + svm_cm.2 + svm_cm.3 + svm_cm.4
+		svm_cm = svm_cm.1
 
 		svm_celltype_pred <- data.frame(colnames(svm_cm)[apply(svm_cm,1,which.max)], rownames(svm_cm), check.names=F)
 		colnames(svm_celltype_pred) <- c("PredictedCelltype_UsingSVM", "seurat_clusters")
@@ -363,10 +261,9 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
  		message ("Added Predicted celltypes using SVM to query")
  		write.table(svm_cm, "ConfusionMatrix_SVM.txt", quote=F, sep="\t")
 
- 		message ("randomForest and SVM based learning and predictions completed. Using predictions from all models to make Ensemble Predictions")
+ 		message ("randomForest and SVM based learning and predictions completed. Using predictions from RF and SVM to make Ensemble Predictions")
 
- 		consensus_cm = rf_cm.1 + rf_cm.2 + rf_cm.3 + rf_cm.4 + svm_cm.1 + svm_cm.2 + svm_cm.3 + svm_cm.4
-
+ 		consensus_cm = rf_cm/max(rf_cm) + svm_cm/max(svm_cm)
  		consensus_celltype_pred <- data.frame(colnames(consensus_cm)[apply(consensus_cm,1,which.max)], rownames(consensus_cm), check.names=F)
 		colnames(consensus_celltype_pred) <- c("PredictedCelltype_UsingEnsemble", "seurat_clusters")
  		PredictedCelltype_UsingEnsemble <- as.character(consensus_celltype_pred[match(query$seurat_clusters, consensus_celltype_pred$seurat_clusters), "PredictedCelltype_UsingEnsemble"])
@@ -377,7 +274,7 @@ CelltypeAnnotation <- function(reference = NULL, query = NULL, downsample = FALS
  		{
  			message("Ensembl celltype annotation completed. Starting validation of celltype assignments using GSEA")
  			reference.validation.use <- subset(reference_use, idents = consensus_celltype_pred$PredictedCelltype_UsingEnsemble)
- 			validation = ValidatePredictions(reference = reference.validation.use, query = query_use)
+ 			validation = ValidatePredictions(reference = reference.validation.use, query = query_use, celltype_assignments = consensus_celltype_pred)
  			message ("Validation completed. Please see summary of GSEA below")
  			print (validation)
  			write.table(validation, "Summary_GeneSetEnrichmentAnalysis.txt", quote=F, sep="\t")
@@ -473,47 +370,23 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
 
 	if(classification.method == "randomForest")
 	{
-		message ("Setting up randomForest classifier learning. ELeFHAnt will set up 4 randomForest classifiers based on hyperparameter (ntree)")
-		message ("Training randomForest classifier 1")
-		rf_Celltypes.1 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 500)
-		message ("Training randomForest classifier 2")
-		rf_Celltypes.2 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 1000)
-		message ("Training randomForest classifier 3")
-		rf_Celltypes.3 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 1500)
-		message ("Training randomForest classifier 4")
-		rf_Celltypes.4 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 2000)
+		message ("Setting up randomForest classifier learning")
+		message ("Training randomForest classifier")
+		rf_Celltypes.1 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 1000)
 
-		message ("Predicting using trained randomForest classifier 1")
+		message ("Predicting using trained randomForest classifier")
 		rf_pred.1 = predict(rf_Celltypes.1, newdata=test)
 		rf_cm.1 = table(test_label, rf_pred.1)
-		message ("Predicting using trained randomForest classifier 2")
-		rf_pred.2 = predict(rf_Celltypes.2, newdata=test)
-		rf_cm.2 = table(test_label, rf_pred.2)
-		message ("Predicting using trained randomForest classifier 3")
-		rf_pred.3 = predict(rf_Celltypes.3, newdata=test)
-		rf_cm.3 = table(test_label, rf_pred.3)
-		message ("Predicting using trained randomForest classifier 4")
-		rf_pred.4 = predict(rf_Celltypes.4, newdata=test)
-		rf_cm.4 = table(test_label, rf_pred.4)
+	
 
-		message ("Calculating weights for each randomForest classifier")
+		message ("Calculating weights for randomForest classifier")
 		rf_acccuracy_estimate.1 <- (1-tail(rf_Celltypes.1$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 1:", rf_acccuracy_estimate.1))
-		rf_acccuracy_estimate.2 <- (1-tail(rf_Celltypes.2$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 2:", rf_acccuracy_estimate.2))
-		rf_acccuracy_estimate.3 <- (1-tail(rf_Celltypes.3$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 3:", rf_acccuracy_estimate.3))
-		rf_acccuracy_estimate.4 <- (1-tail(rf_Celltypes.4$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 4:", rf_acccuracy_estimate.4))
+		message (paste0("Accuray estimate of randomForest classifier:", rf_acccuracy_estimate.1))
 
 		message ("Assigning weights to randomForest predictions")
 		rf_cm.1 <- as.matrix(rf_cm.1) * rf_acccuracy_estimate.1
-		rf_cm.2 <- as.matrix(rf_cm.2) * rf_acccuracy_estimate.2
-		rf_cm.3 <- as.matrix(rf_cm.3) * rf_acccuracy_estimate.3
-		rf_cm.4 <- as.matrix(rf_cm.4) * rf_acccuracy_estimate.4
 
-		message ("Combining weighted predictions from each randomForest classifier ")
-		rf_cm <- rf_cm.1 + rf_cm.2 + rf_cm.3 + rf_cm.4
+		rf_cm <- rf_cm.1
 
 		rf_celltype_pred <- data.frame(colnames(rf_cm)[apply(rf_cm,1,which.max)], rownames(rf_cm), check.names=F)
 		colnames(rf_celltype_pred) <- c("HarmonizedLabels_UsingRF", "seurat_clusters")
@@ -541,47 +414,23 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
 
  	if(classification.method == "SVM")
  	{
- 		message ("Setting up SVM classifier learning. ELeFHAnt will set up 4 SVM classifiers based on hyperparameter (cost)")
- 		message ("Training SVM classifier 1")
- 		svm_Celltypes.1 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10)
- 		message ("Training SVM classifier 2")
- 		svm_Celltypes.2 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 100)
- 		message ("Training SVM classifier 3")
- 		svm_Celltypes.3 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 500)
- 		message ("Training SVM classifier 4")
- 		svm_Celltypes.4 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 1000)
-
- 		message ("Predicting using trained SVM classifier 1")
+ 		message ("Setting up SVM classifier learning")
+ 		message ("Training SVM classifier")
+ 		svm_Celltypes.1 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10, kernel = "linear")
+ 		
+		message ("Predicting using trained SVM classifier")
 		svm_pred.1 = predict(svm_Celltypes.1, newdata=test)
 		svm_cm.1 = table(test_label, svm_pred.1)
-		message ("Predicting using trained SVM classifier 2")
-		svm_pred.2 = predict(svm_Celltypes.2, newdata=test)
-		svm_cm.2 = table(test_label, svm_pred.2)
-		message ("Predicting using trained SVM classifier 3")
-		svm_pred.3 = predict(svm_Celltypes.3, newdata=test)
-		svm_cm.3 = table(test_label, svm_pred.3)
-		message ("Predicting using trained SVM classifier 4")
-		svm_pred.4 = predict(svm_Celltypes.4, newdata=test)
-		svm_cm.4 = table(test_label, svm_pred.4)
 
 		message ("Calculating weights for each SVM classifier")
 		svm_accuracy_estimate.1 <- svm_Celltypes.1$tot.accuracy
 		message (paste0("Accuray estimate of SVM classifier 1:", svm_accuracy_estimate.1))
-		svm_accuracy_estimate.2 <- svm_Celltypes.2$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 2:", svm_accuracy_estimate.2))
-		svm_accuracy_estimate.3 <- svm_Celltypes.3$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 3:", svm_accuracy_estimate.3))
-		svm_accuracy_estimate.4 <- svm_Celltypes.4$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 4:", svm_accuracy_estimate.4))
 
 		message ("Assigning weights to SVM predictions")
 		svm_cm.1 <- as.matrix(svm_cm.1) * svm_accuracy_estimate.1
-		svm_cm.2 <- as.matrix(svm_cm.2) * svm_accuracy_estimate.2
-		svm_cm.3 <- as.matrix(svm_cm.3) * svm_accuracy_estimate.3
-		svm_cm.4 <- as.matrix(svm_cm.4) * svm_accuracy_estimate.4
 
-		message ("Combining weighted predictions from each SVM classifier ")
-		svm_cm = svm_cm.1 + svm_cm.2 + svm_cm.3 + svm_cm.4
+		svm_cm <- svm_cm.1
+
 		svm_celltype_pred <- data.frame(colnames(svm_cm)[apply(svm_cm,1,which.max)], rownames(svm_cm), check.names=F)
 		colnames(svm_celltype_pred) <- c("HarmonizedLabels_UsingSVM", "seurat_clusters")
  		HarmonizedLabels_UsingSVM <- as.character(svm_celltype_pred[match(integrated.atlas$seurat_clusters, svm_celltype_pred$seurat_clusters), "HarmonizedLabels_UsingSVM"])
@@ -609,48 +458,22 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
  	if(classification.method == "Ensemble")
  	{
  		message ("Ensemble learning using classification accuracy of both Random Forest and SVM classifiers")
+		message ("Setting up randomForest classifier learning")
+		message ("Training randomForest classifier")
+		rf_Celltypes.1 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 1000)
 
- 		message ("Setting up randomForest classifier learning. ELeFHAnt will set up 4 randomForest classifiers based on hyperparameter (ntree)")
-		message ("Training randomForest classifier 1")
-		rf_Celltypes.1 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 500)
-		message ("Training randomForest classifier 2")
-		rf_Celltypes.2 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 1000)
-		message ("Training randomForest classifier 3")
-		rf_Celltypes.3 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 1500)
-		message ("Training randomForest classifier 4")
-		rf_Celltypes.4 = randomForest_predictor(train = train, test = test, train_label = train_label, test_label = test_label, ntree = 2000)
-
-		message ("Predicting using trained randomForest classifier 1")
+		message ("Predicting using trained randomForest classifier")
 		rf_pred.1 = predict(rf_Celltypes.1, newdata=test)
 		rf_cm.1 = table(test_label, rf_pred.1)
-		message ("Predicting using trained randomForest classifier 2")
-		rf_pred.2 = predict(rf_Celltypes.2, newdata=test)
-		rf_cm.2 = table(test_label, rf_pred.2)
-		message ("Predicting using trained randomForest classifier 3")
-		rf_pred.3 = predict(rf_Celltypes.3, newdata=test)
-		rf_cm.3 = table(test_label, rf_pred.3)
-		message ("Predicting using trained randomForest classifier 4")
-		rf_pred.4 = predict(rf_Celltypes.4, newdata=test)
-		rf_cm.4 = table(test_label, rf_pred.4)
-
-		message ("Calculating weights for each randomForest classifier")
+	
+		message ("Calculating weights for randomForest classifier")
 		rf_acccuracy_estimate.1 <- (1-tail(rf_Celltypes.1$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 1:", rf_acccuracy_estimate.1))
-		rf_acccuracy_estimate.2 <- (1-tail(rf_Celltypes.2$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 2:", rf_acccuracy_estimate.2))
-		rf_acccuracy_estimate.3 <- (1-tail(rf_Celltypes.3$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 3:", rf_acccuracy_estimate.3))
-		rf_acccuracy_estimate.4 <- (1-tail(rf_Celltypes.4$err.rate[,1], 1))*100
-		message (paste0("Accuray estimate of randomForest classifier 4:", rf_acccuracy_estimate.4))
+		message (paste0("Accuray estimate of randomForest classifier:", rf_acccuracy_estimate.1))
 
 		message ("Assigning weights to randomForest predictions")
 		rf_cm.1 <- as.matrix(rf_cm.1) * rf_acccuracy_estimate.1
-		rf_cm.2 <- as.matrix(rf_cm.2) * rf_acccuracy_estimate.2
-		rf_cm.3 <- as.matrix(rf_cm.3) * rf_acccuracy_estimate.3
-		rf_cm.4 <- as.matrix(rf_cm.4) * rf_acccuracy_estimate.4
 
-		message ("Combining weighted predictions from each randomForest classifier ")
-		rf_cm <- rf_cm.1 + rf_cm.2 + rf_cm.3 + rf_cm.4
+		rf_cm <- rf_cm.1
 
 		rf_celltype_pred <- data.frame(colnames(rf_cm)[apply(rf_cm,1,which.max)], rownames(rf_cm), check.names=F)
 		colnames(rf_celltype_pred) <- c("HarmonizedLabels_UsingRF", "seurat_clusters")
@@ -659,47 +482,23 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
  		message ("Added Harmonized Labels using randomForest to integrated object")
  		write.table(rf_cm, "ConfusionMatrix_RandomForest.txt", quote=F, sep="\t")
  		
- 		message ("Setting up SVM classifier learning. ELeFHAnt will set up 4 SVM classifiers based on hyperparameter (cost)")
- 		message ("Training SVM classifier 1")
- 		svm_Celltypes.1 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10)
- 		message ("Training SVM classifier 2")
- 		svm_Celltypes.2 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 100)
- 		message ("Training SVM classifier 3")
- 		svm_Celltypes.3 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 500)
- 		message ("Training SVM classifier 4")
- 		svm_Celltypes.4 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 1000)
-
- 		message ("Predicting using trained SVM classifier 1")
+ 		message ("Setting up SVM classifier learning")
+ 		message ("Training SVM classifier")
+ 		svm_Celltypes.1 = svm_predictor(train = train, test = test, train_label = train_label, test_label = test_label, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10, kernel = "linear")
+ 		
+		message ("Predicting using trained SVM classifier")
 		svm_pred.1 = predict(svm_Celltypes.1, newdata=test)
 		svm_cm.1 = table(test_label, svm_pred.1)
-		message ("Predicting using trained SVM classifier 2")
-		svm_pred.2 = predict(svm_Celltypes.2, newdata=test)
-		svm_cm.2 = table(test_label, svm_pred.2)
-		message ("Predicting using trained SVM classifier 3")
-		svm_pred.3 = predict(svm_Celltypes.3, newdata=test)
-		svm_cm.3 = table(test_label, svm_pred.3)
-		message ("Predicting using trained SVM classifier 4")
-		svm_pred.4 = predict(svm_Celltypes.4, newdata=test)
-		svm_cm.4 = table(test_label, svm_pred.4)
 
 		message ("Calculating weights for each SVM classifier")
 		svm_accuracy_estimate.1 <- svm_Celltypes.1$tot.accuracy
 		message (paste0("Accuray estimate of SVM classifier 1:", svm_accuracy_estimate.1))
-		svm_accuracy_estimate.2 <- svm_Celltypes.2$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 2:", svm_accuracy_estimate.2))
-		svm_accuracy_estimate.3 <- svm_Celltypes.3$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 3:", svm_accuracy_estimate.3))
-		svm_accuracy_estimate.4 <- svm_Celltypes.4$tot.accuracy
-		message (paste0("Accuray estimate of SVM classifier 4:", svm_accuracy_estimate.4))
 
 		message ("Assigning weights to SVM predictions")
 		svm_cm.1 <- as.matrix(svm_cm.1) * svm_accuracy_estimate.1
-		svm_cm.2 <- as.matrix(svm_cm.2) * svm_accuracy_estimate.2
-		svm_cm.3 <- as.matrix(svm_cm.3) * svm_accuracy_estimate.3
-		svm_cm.4 <- as.matrix(svm_cm.4) * svm_accuracy_estimate.4
 
-		message ("Combining weighted predictions from each SVM classifier ")
-		svm_cm = svm_cm.1 + svm_cm.2 + svm_cm.3 + svm_cm.4
+		svm_cm <- svm_cm.1
+
 		svm_celltype_pred <- data.frame(colnames(svm_cm)[apply(svm_cm,1,which.max)], rownames(svm_cm), check.names=F)
 		colnames(svm_celltype_pred) <- c("HarmonizedLabels_UsingSVM", "seurat_clusters")
  		HarmonizedLabels_UsingSVM <- as.character(svm_celltype_pred[match(integrated.atlas$seurat_clusters, svm_celltype_pred$seurat_clusters), "HarmonizedLabels_UsingSVM"])
@@ -709,7 +508,7 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
 
  		message ("randomForest and SVM based learning and harmonization completed. Using predictions from all models for Ensemble harmonization")
 
- 		consensus_cm = rf_cm.1 + rf_cm.2 + rf_cm.3 + rf_cm.4 + svm_cm.1 + svm_cm.2 + svm_cm.3 + svm_cm.4
+ 		consensus_cm = rf_cm/max(rf_cm) + svm_cm/max(svm_cm)
 		
  		consensus_celltype_pred <- data.frame(colnames(consensus_cm)[apply(consensus_cm,1,which.max)], rownames(consensus_cm), check.names=F)
 		colnames(consensus_celltype_pred) <- c("HarmonizedLabels_UsingEnsemble", "seurat_clusters")
@@ -741,7 +540,7 @@ randomForest_predictor <- function(train = NULL, test = NULL, train_label = NULL
 	return(rf_Celltypes)
 }
 
-svm_predictor <- function(train = NULL, test = NULL, train_label = NULL, test_label = NULL, crossvalidationSVM = NULL, cachesize = NULL, cost = NULL) {
- 	svm_Celltypes <- svm(factor(train_label) ~ ., data=train, scale = FALSE, cross = crossvalidationSVM, cachesize = cachesize, cost = cost)
+svm_predictor <- function(train = NULL, test = NULL, train_label = NULL, test_label = NULL, crossvalidationSVM = NULL, cachesize = NULL, cost = NULL, kernel = "linear") {
+ 	svm_Celltypes <- svm(factor(train_label) ~ ., data=train, scale = FALSE, cross = crossvalidationSVM, cachesize = cachesize, cost = cost, kernel = "linear")
 	return(svm_Celltypes)
 }
