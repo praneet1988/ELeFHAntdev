@@ -535,6 +535,234 @@ LabelHarmonization <- function(seurat.objects = c(), perform_integration = TRUE,
  	}
  }
 
+#' ELeFHAnt Deduce Relationship
+#'
+#' Deduce Relationship is a function that generates a heatmap comparing the annotations of two datasets.
+#' It requires two datasets (both processed Seurat Objects with Celltypes column in metadata). One can choose from randomForest, SVM or Ensemble classifiction method
+#' to learn celltypes from reference dataset and then predict celltypes for query dataset.
+#' 
+#' @param reference a processed Seurat Object with Celltypes column in metadata
+#' @param query a processed seurat object with Celltypes column in metadata
+#' @param downsample logical Indicator (TRUE or FALSE) to downsample reference and query enabling fast computation
+#' @param downsample_to a numerical value > 1 to downsample cells [Default: 100] in reference and query for Celltypes and seurat_clusters resspectively
+#' @param classification.method choose classification method for learning and predicting celltypes. 
+#' Choices: randomForest (decision trees), SVM (Support Vector Machines) or Ensemble (uses estimation robustness of both randomForest and SVM to predict)
+#' @param crossvalidationSVM if a integer value k>0 is specified, a k-fold cross validation on the training data is performed to assess the quality of the model
+#' @param validatePredictions logical indicator (TRUE or FALSE) to asses predictions by computing number of markers shared between assigned celltype and annotated cluster
+#' @return query seurat object with predictions added to meta.data of the object
+#' @export
+DeduceRelationship <- function(reference = NULL, query = NULL, downsample = FALSE, downsample_to = 100, classification.method = c("randomForest", "SVM", "Ensemble"), crossvalidationSVM = 5, validatePredictions = TRUE) {
+  if(downsample == TRUE)
+  {
+    message ("Setting Assay of reference and query to RNA")
+    DefaultAssay(reference) <- "RNA"
+    DefaultAssay(query) <- "RNA"
+    
+    message ("Downsampling Reference and Query")
+    reference$Dataset <- rep("reference", ncol(reference))
+    query$Dataset <- rep("query", ncol(query))
+    
+    Idents(reference) <- reference$Celltypes
+    Idents(query) <- query$Celltypes
+    
+    reference_use <- subset(reference, downsample = downsample_to)
+    query_use <- subset(query, downsample = downsample_to)
+  }
+  
+  if(downsample == FALSE)
+  {
+    message ("Setting Assay of reference and query to RNA")
+    DefaultAssay(reference) <- "RNA"
+    DefaultAssay(query) <- "RNA"
+    
+    reference$Dataset <- rep("reference", ncol(reference))
+    query$Dataset <- rep("query", ncol(query))
+    
+    Idents(reference) <- reference$Celltypes
+    Idents(query) <- query$Celltypes
+    
+    reference_use <- reference
+    query_use <- query
+  }
+  
+  message ("Merging reference and query")
+  combined <- merge(x=reference_use, y=query_use)
+  message ("Normalization, Variable Feature Selection and scaling")
+  combined <- NormalizeData(combined)
+  combined <- FindVariableFeatures(combined)
+  combined <- ScaleData(combined)
+  combined_exp <- combined[['RNA']]@scale.data
+  combined_exp <- t(combined_exp)
+  combined_exp <- data.frame(combined_exp)
+  combined_exp$Dataset <- combined$Dataset
+  message ("Generating train and test sets")
+  X <- split(combined_exp, combined_exp$Dataset)
+  X$reference$Celltypes <- reference_use$Celltypes
+  X$query$Celltypes <- query_use$Celltypes
+  
+  if(classification.method == "randomForest")
+  {
+    message ("Setting up randomForest classifier learning.")
+    message ("Training randomForest classifier 1")
+    rf_Celltypes.1 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Celltypes, ntree = 500)
+    
+    message ("Predicting using trained randomForest classifier")
+    rf_pred.1 = predict(rf_Celltypes.1, newdata=X$query[,1:2000])
+    rf_cm.1 = table(X$query$Celltypes, rf_pred.1)
+    
+    message ("Calculating weight for randomForest classifier")
+    rf_acccuracy_estimate.1 <- (1-tail(rf_Celltypes.1$err.rate[,1], 1))*100
+    message (paste0("Accuray estimate of randomForest classifier 1:", rf_acccuracy_estimate.1))
+    
+    message ("Assigning weights to randomForest predictions")
+    rf_cm.1 <- as.matrix(rf_cm.1) * rf_acccuracy_estimate.1
+    
+    message ("Generating confusion matrix and heatmap")
+    rf_cm <- rf_cm.1
+    write.table(rf_cm, "ConfusionMatrix_RandomForest.txt", quote=F, sep="\t")
+    rf_cm_norm <- round(rf_cm/apply(rf_cm,1,max),3)
+    rf_df <- as.data.frame(rf_cm_norm)
+    colnames(rf_df) <- c("Query","Reference","Cells")
+    ggplot(data = rf_df, aes(x=Query, y=Reference, fill=Cells)) + geom_tile() + scale_fill_gradientn(colors = c("blue", "white", "red")) + theme(axis.text.x = element_text(angle = 90))
+    ggsave("Heatmap_RandomForest.png", width = 10, height = 10)
+    if(validatePredictions == TRUE)
+    {
+      message("randomForest based learning and celltype annotation completed. Starting validation of celltype assignments using GSEA")
+      reference.validation.use <- subset(reference_use, idents = rf_celltype_pred$PredictedCelltype_UsingRF)
+      validation = ValidatePredictions(reference = reference.validation.use, query = query_use)
+      message ("Validation completed. Please see summary of GSEA below")
+      print (validation)
+      write.table(validation, "Summary_GeneSetEnrichmentAnalysis.txt", quote=F, sep="\t")
+      return(query)
+    }
+    if(validatePredictions == FALSE)
+    {
+      message("randomForest based learning and celltype annotation completed")
+      return(query)
+    }
+  }
+  
+  if(classification.method == "SVM")
+  {
+    message ("Setting up SVM classifier learning.")
+    message ("Training SVM classifier")
+    svm_Celltypes.1 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Celltypes, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10)
+    
+    message ("Predicting using trained SVM classifier")
+    svm_pred.1 = predict(svm_Celltypes.1, newdata=X$query[,1:2000])
+    svm_cm.1 = table(X$query$Celltypes, svm_pred.1)
+    
+    message ("Calculating weight for SVM classifier")
+    svm_accuracy_estimate.1 <- svm_Celltypes.1$tot.accuracy
+    message (paste0("Accuray estimate of SVM classifier 1:", svm_accuracy_estimate.1))
+    
+    message ("Assigning weights to SVM predictions")
+    svm_cm.1 <- as.matrix(svm_cm.1) * svm_accuracy_estimate.1
+    
+    message ("Generating confusion matrix and heatmap")
+    svm_cm <- svm_cm.1
+    write.table(svm_cm, "ConfusionMatrix_SVM.txt", quote=F, sep="\t")
+    svm_cm_norm <- round(svm_cm/apply(svm_cm,1,max),3)
+    svm_df <- as.data.frame(svm_cm_norm)
+    colnames(svm_df) <- c("Query","Reference","Cells")
+    ggplot(data = svm_df, aes(x=Query, y=Reference, fill=Cells)) + geom_tile() + scale_fill_gradientn(colors = c("blue", "white", "red")) + theme(axis.text.x = element_text(angle = 90))
+    ggsave("Heatmap_SVM.png", width = 10, height = 10)
+    if(validatePredictions == TRUE)
+    {
+      message("SVM based learning and celltype annotation completed. Starting validation of celltype assignments using GSEA")
+      reference.validation.use <- subset(reference_use, idents = svm_celltype_pred$PredictedCelltype_UsingSVM)
+      validation = ValidatePredictions(reference = reference.validation.use, query = query_use)
+      message ("Validation completed. Please see summary of GSEA below")
+      print (validation)
+      write.table(validation, "Summary_GeneSetEnrichmentAnalysis.txt", quote=F, sep="\t")
+      return(query)
+    }
+    if(validatePredictions == FALSE)
+    {
+      message ("SVM based learning and celltype annotation completed")
+      return(query)
+    }
+  }
+  
+  if(classification.method == "Ensemble")
+  {
+    message ("Ensemble learning using classification accuracy of both Random Forest and SVM classifiers")
+    message ("Setting up randomForest classifier learning.")
+    message ("Training randomForest classifier")
+    rf_Celltypes.1 = randomForest_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Celltypes, ntree = 500)
+
+    message ("Predicting using trained randomForest classifier")
+    rf_pred.1 = predict(rf_Celltypes.1, newdata=X$query[,1:2000])
+    rf_cm.1 = table(X$query$Celltypes, rf_pred.1)
+    
+    message ("Calculating weight for randomForest classifier")
+    rf_acccuracy_estimate.1 <- (1-tail(rf_Celltypes.1$err.rate[,1], 1))*100
+    message (paste0("Accuray estimate of randomForest classifier:", rf_acccuracy_estimate.1))
+    
+    message ("Assigning weights to randomForest predictions")
+    rf_cm.1 <- as.matrix(rf_cm.1) * rf_acccuracy_estimate.1
+    
+    message ("Generating confusion matrix and heatmap")
+    rf_cm <- rf_cm.1 
+    write.table(rf_cm, "ConfusionMatrix_RandomForest.txt", quote=F, sep="\t")
+    rf_cm_norm <- round(rf_cm/apply(rf_cm,1,max),3)
+    rf_df <- as.data.frame(rf_cm_norm)
+    colnames(rf_df) <- c("Query","Reference","Cells")
+    ggplot(data = rf_df, aes(x=Query, y=Reference, fill=Cells)) + geom_tile() + scale_fill_gradientn(colors = c("blue", "white", "red")) + theme(axis.text.x = element_text(angle = 90))
+    ggsave("Heatmap_RandomForest.png", width = 10, height = 10)
+    
+    message ("Setting up SVM classifier learning.")
+    message ("Training SVM classifier")
+    svm_Celltypes.1 = svm_predictor(train = X$reference[,1:2000], test = X$query[,1:2000], train_label = X$reference$Celltypes, test_label = X$query$Celltypes, crossvalidationSVM = crossvalidationSVM, cachesize = 100, cost = 10)
+    
+    message ("Predicting using trained SVM classifier")
+    svm_pred.1 = predict(svm_Celltypes.1, newdata=X$query[,1:2000])
+    svm_cm.1 = table(X$query$Celltypes, svm_pred.1)
+    
+    message ("Calculating weight for SVM classifier")
+    svm_accuracy_estimate.1 <- svm_Celltypes.1$tot.accuracy
+    message (paste0("Accuray estimate of SVM classifier 1:", svm_accuracy_estimate.1))
+    
+    message ("Assigning weights to SVM predictions")
+    svm_cm.1 <- as.matrix(svm_cm.1) * svm_accuracy_estimate.1
+    
+    message ("Generating confusion matrix and heatmap")
+    svm_cm <- svm_cm.1
+    write.table(svm_cm, "ConfusionMatrix_SVM.txt", quote=F, sep="\t")
+    svm_cm_norm <- round(svm_cm/apply(svm_cm,1,max),3)
+    svm_df <- as.data.frame(svm_cm_norm)
+    colnames(svm_df) <- c("Query","Reference","Cells")
+    ggplot(data = svm_df, aes(x=Query, y=Reference, fill=Cells)) + geom_tile() + scale_fill_gradientn(colors = c("blue", "white", "red")) + theme(axis.text.x = element_text(angle = 90))
+    ggsave("Heatmap_SVM.png", width = 10, height = 10)
+    
+    message ("randomForest and SVM based learning and predictions completed. Using predictions from all models to make Ensemble Predictions")
+    
+    message ("Generating confusion matrix and heatmap")
+    consensus_cm = rf_cm/max(rf_cm) + svm_cm/max(svm_cm)
+    write.table(consensus_cm, "ConfusionMatrix_EnsembleLearning.txt", quote=F, sep="\t")
+    consensus_cm_norm <- round(consensus_cm/apply(consensus_cm,1,max),3)
+    consensus_df <- as.data.frame(consensus_cm_norm)
+    colnames(consensus_df) <- c("Query","Reference","Cells")
+    ggplot(data = consensus_df, aes(x=Query, y=Reference, fill=Cells)) + geom_tile() + scale_fill_gradientn(colors = c("blue", "white", "red")) + theme(axis.text.x = element_text(angle = 90))
+    ggsave("Heatmap_Ensemble.png", width = 10, height = 10)
+    if(validatePredictions == TRUE)
+    {
+      message("Ensembl celltype annotation completed. Starting validation of celltype assignments using GSEA")
+      reference.validation.use <- subset(reference_use, idents = consensus_celltype_pred$PredictedCelltype_UsingEnsemble)
+      validation = ValidatePredictions(reference = reference.validation.use, query = query_use)
+      message ("Validation completed. Please see summary of GSEA below")
+      print (validation)
+      write.table(validation, "Summary_GeneSetEnrichmentAnalysis.txt", quote=F, sep="\t")
+      return(query)
+    }
+    if(validatePredictions == FALSE)
+    {
+      message("Ensembl celltype annotation completed.")
+      return(query)
+    }
+  }
+}
+
 randomForest_predictor <- function(train = NULL, test = NULL, train_label = NULL, test_label = NULL, ntree = NULL) {
 	rf_Celltypes <- randomForest(factor(train_label) ~ ., data=train, ntree = ntree)
 	return(rf_Celltypes)
