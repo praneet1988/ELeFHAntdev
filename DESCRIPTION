@@ -1,6 +1,6 @@
 Package: ELeFHAnt
 Title: Ensemble Learning for Harmonization and Annotation of Single Cells
-Version: 1.1
+Version: dev
 Authors@R: 
     person(given = "Praneet",
            family = "Chaturvedi",
@@ -17,6 +17,7 @@ Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.1
+biocViews: 
 Imports:
     Seurat,
     dplyr,
